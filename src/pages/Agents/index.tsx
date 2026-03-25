@@ -733,24 +733,31 @@ function AgentModelModal({
     ? `${selectedRuntimeProviderKey}/${trimmedModelId}`
     : '';
   const normalizedDefaultModelRef = (defaultModelRef || '').trim();
+  // Fix: treat "both empty" as NOT using default (intends to clear override), so modelChanged is correct
   const isUsingDefaultModelInForm = Boolean(normalizedDefaultModelRef) && nextModelRef === normalizedDefaultModelRef;
   const currentOverrideModelRef = (agent.overrideModelRef || '').trim();
+  // Fix: allow saving when user intentionally clears the override (nextModelRef is empty = clear)
   const desiredOverrideModelRef = nextModelRef && nextModelRef !== normalizedDefaultModelRef
     ? nextModelRef
     : null;
-  const modelChanged = (desiredOverrideModelRef || '') !== currentOverrideModelRef;
+  // Fix: detect change including when going from '' (never had override) to null (wants to clear)
+  const modelChanged = desiredOverrideModelRef !== currentOverrideModelRef
+    ? true
+    : Boolean(currentOverrideModelRef); // true if currently has override and we want to keep it unchanged
 
   const handleSaveModel = async () => {
     if (!selectedRuntimeProviderKey) {
       toast.error(t('toast.agentModelProviderRequired'));
       return;
     }
-    if (!trimmedModelId) {
+    // Fix: allow saving without modelId when clearing the override
+    if (!trimmedModelId && nextModelRef) {
       toast.error(t('toast.agentModelIdRequired'));
       return;
     }
     if (!modelChanged) return;
-    if (!nextModelRef.includes('/')) {
+    // Fix: allow saving when clearing override (nextModelRef is empty = clear override)
+    if (nextModelRef && !nextModelRef.includes('/')) {
       toast.error(t('toast.agentModelInvalid'));
       return;
     }
