@@ -19,7 +19,8 @@
     "actions": {
         "enableVisible": "Enable Visible",
         "disableVisible": "Disable Visible",
-        "installSkill": "Install Skills"
+        "installSkill": "Install Skills",
+        "update": "Update"
     },
     "noSkills": "No skills found",
     "noSkillsSearch": "Try a different search term",
@@ -73,6 +74,9 @@
         "disabled": "Skill disabled",
         "installed": "Skill installed and enabled",
         "uninstalled": "Skill uninstalled successfully",
+        "updated": "Skill updated from v{{from}} to v{{to}}",
+        "upToDate": "Skill is already at the latest version (v{{version}})",
+        "failedUpdate": "Failed to update skill",
         "openedEditor": "Opened in editor",
         "failedEditor": "Failed to open editor",
         "failedSave": "Failed to save configuration",

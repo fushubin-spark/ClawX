@@ -19,7 +19,8 @@
     "actions": {
         "enableVisible": "批量启用可见项",
         "disableVisible": "批量禁用可见项",
-        "installSkill": "安装技能"
+        "installSkill": "安装技能",
+        "update": "更新"
     },
     "noSkills": "未找到技能",
     "noSkillsSearch": "尝试不同的搜索词",
@@ -73,6 +74,9 @@
         "disabled": "技能已禁用",
         "installed": "技能已安装并启用",
         "uninstalled": "技能已成功卸载",
+        "updated": "技能已从 v{{from}} 更新至 v{{to}}",
+        "upToDate": "技能已是最新版本 (v{{version}})",
+        "failedUpdate": "更新技能失败",
         "openedEditor": "已在编辑器中打开",
         "failedEditor": "无法打开编辑器",
         "failedSave": "保存配置失败",
