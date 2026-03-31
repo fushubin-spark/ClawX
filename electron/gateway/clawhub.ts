@@ -355,7 +355,7 @@ export class ClawHubService {
     }
 
     /**
-     * Install a skill using COS bucket direct download
+     * Install a skill from COS bucket, with fallback to clawhub
      */
     async install(params: ClawHubInstallParams): Promise<void> {
         const { exec } = require('child_process');
@@ -385,19 +385,29 @@ export class ClawHubService {
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        console.log(`[ClawHubService] Downloading from COS bucket: ${cosUrl}`);
+        // Try COS bucket first
+        try {
+            console.log(`[ClawHubService] Trying COS bucket: ${cosUrl}`);
+            await execAsync(`curl -fsSL "${cosUrl}" -o "${tempZip}"`);
+            ensureDir(skillDir);
+            await execAsync(`unzip -o "${tempZip}" -d "${skillDir}"`);
+            fs.unlinkSync(tempZip);
+            console.log(`[ClawHubService] Installed ${params.slug} from COS bucket`);
+            return;
+        } catch (cosError) {
+            console.log(`[ClawHubService] COS bucket install failed, falling back to clawhub: ${cosError}`);
+        }
 
-        // Download zip file
-        await execAsync(`curl -fsSL "${cosUrl}" -o "${tempZip}"`);
-
-        // Extract zip
-        ensureDir(skillDir);
-        await execAsync(`unzip -o "${tempZip}" -d "${skillDir}"`);
-
-        // Clean up
-        fs.unlinkSync(tempZip);
-
-        console.log(`[ClawHubService] Installed ${params.slug} to ${skillDir}`);
+        // Fall back to clawhub
+        console.log(`[ClawHubService] Using clawhub to install ${params.slug}`);
+        const args = ['install', params.slug];
+        if (params.version) {
+            args.push('--version', params.version);
+        }
+        if (params.force) {
+            args.push('--force');
+        }
+        await this.runCommand(args);
     }
 
     /**
@@ -430,7 +440,8 @@ export class ClawHubService {
     }
 
     /**
-     * Update a skill to the latest version using COS bucket direct download
+     * Update a skill to the latest version
+     * First tries COS bucket, falls back to clawhub if not found (404)
      */
     async update(params: ClawHubUpdateParams): Promise<{ success: boolean; previousVersion?: string; newVersion?: string; error?: string }> {
         try {
@@ -439,9 +450,9 @@ export class ClawHubService {
             const currentSkill = installed.find(s => s.slug === params.slug);
             const previousVersion = currentSkill?.version;
 
-            // Download from COS bucket directly
+            // Try COS bucket first
             const cosUrl = `https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/${params.slug}.zip`;
-            console.log(`[ClawHubService] Downloading from COS bucket: ${cosUrl}`);
+            console.log(`[ClawHubService] Trying COS bucket: ${cosUrl}`);
 
             const { exec } = require('child_process');
             const { promisify } = require('util');
@@ -461,30 +472,52 @@ export class ClawHubService {
                 fs.rmSync(skillDir, { recursive: true, force: true });
             }
 
-            // Download zip file
-            await execAsync(`curl -fsSL "${cosUrl}" -o "${tempZip}"`);
+            try {
+                // Download zip file from COS bucket
+                await execAsync(`curl -fsSL "${cosUrl}" -o "${tempZip}"`);
 
-            // Extract zip
-            await execAsync(`unzip -o "${tempZip}" -d "${skillDir}"`);
+                // Extract zip
+                await execAsync(`unzip -o "${tempZip}" -d "${skillDir}"`);
 
-            // Clean up
-            fs.unlinkSync(tempZip);
+                // Clean up
+                fs.unlinkSync(tempZip);
 
-            // Get new version from _meta.json
-            let newVersion = previousVersion;
-            const metaPath = path.join(skillDir, '_meta.json');
-            if (fs.existsSync(metaPath)) {
-                try {
-                    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-                    newVersion = meta.version || newVersion;
-                } catch {}
+                // Get new version from _meta.json
+                let newVersion = previousVersion;
+                const metaPath = path.join(skillDir, '_meta.json');
+                if (fs.existsSync(metaPath)) {
+                    try {
+                        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                        newVersion = meta.version || newVersion;
+                    } catch {}
+                }
+
+                return {
+                    success: true,
+                    previousVersion,
+                    newVersion,
+                };
+            } catch (cosError) {
+                // COS download failed (likely 404), try clawhub as fallback
+                console.log(`[ClawHubService] COS bucket download failed, falling back to clawhub: ${cosError}`);
+
+                const args = ['update', params.slug];
+                if (params.force) {
+                    args.push('--force');
+                }
+                await this.runCommand(args);
+
+                // Get new version after update
+                const updated = await this.listInstalled();
+                const updatedSkill = updated.find(s => s.slug === params.slug);
+                const newVersion = updatedSkill?.version;
+
+                return {
+                    success: true,
+                    previousVersion,
+                    newVersion,
+                };
             }
-
-            return {
-                success: true,
-                previousVersion,
-                newVersion,
-            };
         } catch (error) {
             console.error('ClawHub update error:', error);
             return {
