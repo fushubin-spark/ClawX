@@ -356,9 +356,29 @@ export class ClawHubService {
 
     /**
      * Install a skill
+     * Uses skillhub for domestic source if available
      */
     async install(params: ClawHubInstallParams): Promise<void> {
-        // Set registry for this command
+        // Try skillhub first (uses domestic source)
+        const skillhubPath = '/Users/sparkfu/.local/bin/skillhub';
+        const useSkillhub = fs.existsSync(skillhubPath) && params.slug;
+
+        if (useSkillhub) {
+            console.log(`[ClawHubService] Using skillhub to install ${params.slug}`);
+            try {
+                const args = ['install', params.slug];
+                if (params.force) {
+                    args.push('--force');
+                }
+                await this.runSkillhubCommand(args);
+                return;
+            } catch (error) {
+                console.warn(`[ClawHubService] skillhub install failed, falling back to clawhub:`, error);
+                // Fall through to clawhub
+            }
+        }
+
+        // Fall back to clawhub
         if (params.registry !== undefined) {
             this._registry = params.registry;
         }
@@ -406,31 +426,34 @@ export class ClawHubService {
     }
 
     /**
-     * Update a skill to the latest version
+     * Update a skill to the latest version using skillhub CLI
+     * Falls back to clawhub if skillhub is not available
      */
     async update(params: ClawHubUpdateParams): Promise<{ success: boolean; previousVersion?: string; newVersion?: string; error?: string }> {
-        // Set registry for this command
-        if (params.registry !== undefined) {
-            this._registry = params.registry;
-        }
-
         try {
-            const args = ['update', params.slug];
-
-            if (params.version) {
-                args.push('--version', params.version);
-            }
-
-            if (params.force) {
-                args.push('--force');
-            }
-
             // Get current version before update
             const installed = await this.listInstalled();
             const currentSkill = installed.find(s => s.slug === params.slug);
             const previousVersion = currentSkill?.version;
 
-            await this.runCommand(args);
+            // Try skillhub first (uses domestic source)
+            const skillhubPath = '/Users/sparkfu/.local/bin/skillhub';
+            const useSkillhub = fs.existsSync(skillhubPath);
+
+            if (useSkillhub) {
+                console.log(`[ClawHubService] Using skillhub to update ${params.slug}`);
+                // Use 'skillhub install --force' to re-download the latest version
+                const args = ['install', params.slug, '--force'];
+                await this.runSkillhubCommand(args);
+            } else {
+                // Fall back to clawhub update
+                console.log(`[ClawHubService] Using clawhub to update ${params.slug}`);
+                const args = ['update', params.slug];
+                if (params.force) {
+                    args.push('--force');
+                }
+                await this.runCommand(args);
+            }
 
             // Get new version after update
             const updated = await this.listInstalled();
@@ -449,6 +472,58 @@ export class ClawHubService {
                 error: error instanceof Error ? error.message : String(error),
             };
         }
+    }
+
+    /**
+     * Run skillhub command (for domestic mirror)
+     */
+    private async runSkillhubCommand(args: string[]): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const skillhubBin = '/Users/sparkfu/.local/bin/skillhub';
+            
+            if (!fs.existsSync(skillhubBin)) {
+                reject(new Error(`skillhub not found at ${skillhubBin}`));
+                return;
+            }
+
+            const displayCommand = ['skillhub', ...args].join(' ');
+            console.log(`Running skillhub command: ${displayCommand}`);
+
+            const child = spawn(skillhubBin, args, {
+                cwd: this.workDir,
+                env: {
+                    ...process.env,
+                    CI: 'true',
+                },
+                windowsHide: true,
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            child.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+
+            child.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            child.on('error', (error) => {
+                console.error('skillhub process error:', error);
+                reject(error);
+            });
+
+            child.on('close', (code) => {
+                if (code !== 0 && code !== null) {
+                    console.error(`skillhub command failed with code ${code}`);
+                    console.error('Stderr:', stderr);
+                    reject(new Error(`Command failed: ${stderr || stdout}`));
+                } else {
+                    resolve(stdout.trim());
+                }
+            });
+        });
     }
 
     /**
