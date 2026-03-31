@@ -355,45 +355,49 @@ export class ClawHubService {
     }
 
     /**
-     * Install a skill
-     * Uses skillhub for domestic source if available
+     * Install a skill using COS bucket direct download
      */
     async install(params: ClawHubInstallParams): Promise<void> {
-        // Try skillhub first (uses domestic source)
-        const skillhubPath = '/Users/sparkfu/.local/bin/skillhub';
-        const useSkillhub = fs.existsSync(skillhubPath) && params.slug;
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
 
-        if (useSkillhub) {
-            console.log(`[ClawHubService] Using skillhub to install ${params.slug}`);
-            try {
-                const args = ['install', params.slug];
-                if (params.force) {
-                    args.push('--force');
-                }
-                await this.runSkillhubCommand(args);
-                return;
-            } catch (error) {
-                console.warn(`[ClawHubService] skillhub install failed, falling back to clawhub:`, error);
-                // Fall through to clawhub
-            }
+        const skillDir = path.join(this.workDir, 'skills', params.slug);
+        const cosUrl = `https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/${params.slug}.zip`;
+
+        // Check if already installed
+        if (fs.existsSync(skillDir) && !params.force) {
+            console.log(`[ClawHubService] Skill ${params.slug} already installed, skipping`);
+            return;
         }
 
-        // Fall back to clawhub
-        if (params.registry !== undefined) {
-            this._registry = params.registry;
+        // Create skills directory
+        ensureDir(path.join(this.workDir, 'skills'));
+
+        // Remove existing if force
+        if (fs.existsSync(skillDir) && params.force) {
+            fs.rmSync(skillDir, { recursive: true, force: true });
         }
 
-        const args = ['install', params.slug];
-
-        if (params.version) {
-            args.push('--version', params.version);
+        const tempZip = path.join(this.workDir, '.clawhub', 'temp', `${params.slug}.zip`);
+        const tempDir = path.dirname(tempZip);
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        if (params.force) {
-            args.push('--force');
-        }
+        console.log(`[ClawHubService] Downloading from COS bucket: ${cosUrl}`);
 
-        await this.runCommand(args);
+        // Download zip file
+        await execAsync(`curl -fsSL "${cosUrl}" -o "${tempZip}"`);
+
+        // Extract zip
+        ensureDir(skillDir);
+        await execAsync(`unzip -o "${tempZip}" -d "${skillDir}"`);
+
+        // Clean up
+        fs.unlinkSync(tempZip);
+
+        console.log(`[ClawHubService] Installed ${params.slug} to ${skillDir}`);
     }
 
     /**
@@ -426,8 +430,7 @@ export class ClawHubService {
     }
 
     /**
-     * Update a skill to the latest version using skillhub CLI
-     * Falls back to clawhub if skillhub is not available
+     * Update a skill to the latest version using COS bucket direct download
      */
     async update(params: ClawHubUpdateParams): Promise<{ success: boolean; previousVersion?: string; newVersion?: string; error?: string }> {
         try {
@@ -436,29 +439,46 @@ export class ClawHubService {
             const currentSkill = installed.find(s => s.slug === params.slug);
             const previousVersion = currentSkill?.version;
 
-            // Try skillhub first (uses domestic source)
-            const skillhubPath = '/Users/sparkfu/.local/bin/skillhub';
-            const useSkillhub = fs.existsSync(skillhubPath);
+            // Download from COS bucket directly
+            const cosUrl = `https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/${params.slug}.zip`;
+            console.log(`[ClawHubService] Downloading from COS bucket: ${cosUrl}`);
 
-            if (useSkillhub) {
-                console.log(`[ClawHubService] Using skillhub to update ${params.slug}`);
-                // Use 'skillhub install --force' to re-download the latest version
-                const args = ['install', params.slug, '--force'];
-                await this.runSkillhubCommand(args);
-            } else {
-                // Fall back to clawhub update
-                console.log(`[ClawHubService] Using clawhub to update ${params.slug}`);
-                const args = ['update', params.slug];
-                if (params.force) {
-                    args.push('--force');
-                }
-                await this.runCommand(args);
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+
+            const skillDir = path.join(this.workDir, 'skills', params.slug);
+            const tempZip = path.join(this.workDir, '.clawhub', 'temp', `${params.slug}.zip`);
+
+            // Ensure temp directory exists
+            const tempDir = path.dirname(tempZip);
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
             }
 
-            // Get new version after update
-            const updated = await this.listInstalled();
-            const updatedSkill = updated.find(s => s.slug === params.slug);
-            const newVersion = updatedSkill?.version;
+            // Remove existing skill directory if force
+            if (fs.existsSync(skillDir) && params.force) {
+                fs.rmSync(skillDir, { recursive: true, force: true });
+            }
+
+            // Download zip file
+            await execAsync(`curl -fsSL "${cosUrl}" -o "${tempZip}"`);
+
+            // Extract zip
+            await execAsync(`unzip -o "${tempZip}" -d "${skillDir}"`);
+
+            // Clean up
+            fs.unlinkSync(tempZip);
+
+            // Get new version from _meta.json
+            let newVersion = previousVersion;
+            const metaPath = path.join(skillDir, '_meta.json');
+            if (fs.existsSync(metaPath)) {
+                try {
+                    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                    newVersion = meta.version || newVersion;
+                } catch {}
+            }
 
             return {
                 success: true,
@@ -472,58 +492,6 @@ export class ClawHubService {
                 error: error instanceof Error ? error.message : String(error),
             };
         }
-    }
-
-    /**
-     * Run skillhub command (for domestic mirror)
-     */
-    private async runSkillhubCommand(args: string[]): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const skillhubBin = '/Users/sparkfu/.local/bin/skillhub';
-            
-            if (!fs.existsSync(skillhubBin)) {
-                reject(new Error(`skillhub not found at ${skillhubBin}`));
-                return;
-            }
-
-            const displayCommand = ['skillhub', ...args].join(' ');
-            console.log(`Running skillhub command: ${displayCommand}`);
-
-            const child = spawn(skillhubBin, args, {
-                cwd: this.workDir,
-                env: {
-                    ...process.env,
-                    CI: 'true',
-                },
-                windowsHide: true,
-            });
-
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            child.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            child.on('error', (error) => {
-                console.error('skillhub process error:', error);
-                reject(error);
-            });
-
-            child.on('close', (code) => {
-                if (code !== 0 && code !== null) {
-                    console.error(`skillhub command failed with code ${code}`);
-                    console.error('Stderr:', stderr);
-                    reject(new Error(`Command failed: ${stderr || stdout}`));
-                } else {
-                    resolve(stdout.trim());
-                }
-            });
-        });
     }
 
     /**
