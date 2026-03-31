@@ -65,6 +65,7 @@ interface SkillsState {
   searchError: string | null;
   installing: Record<string, boolean>; // slug -> boolean
   error: string | null;
+  registry: string; // Current registry URL
 
   // Actions
   fetchSkills: () => Promise<void>;
@@ -76,6 +77,7 @@ interface SkillsState {
   disableSkill: (skillId: string) => Promise<void>;
   setSkills: (skills: Skill[]) => void;
   updateSkill: (skillId: string, updates: Partial<Skill>) => void;
+  setRegistry: (registry: string) => Promise<void>;
 }
 
 export const useSkillsStore = create<SkillsState>((set, get) => ({
@@ -86,6 +88,19 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   searchError: null,
   installing: {},
   error: null,
+  registry: '',
+
+  setRegistry: async (registry: string) => {
+    set({ registry });
+    try {
+      await hostApiFetch<{ success: boolean }>('/api/clawhub/set-registry', {
+        method: 'PUT',
+        body: JSON.stringify({ registry: registry || undefined }),
+      });
+    } catch (error) {
+      console.error('Failed to set registry:', error);
+    }
+  },
 
   fetchSkills: async () => {
     // Only show loading state if we have no skills yet (initial load)
@@ -179,9 +194,10 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   searchSkills: async (query: string) => {
     set({ searching: true, searchError: null });
     try {
+      const registry = get().registry;
       const result = await hostApiFetch<{ success: boolean; results?: MarketplaceSkill[]; error?: string }>('/api/clawhub/search', {
         method: 'POST',
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, registry: registry || undefined }),
       });
       if (result.success) {
         set({ searchResults: result.results || [] });
@@ -202,9 +218,10 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   installSkill: async (slug: string, version?: string) => {
     set((state) => ({ installing: { ...state.installing, [slug]: true } }));
     try {
+      const registry = get().registry;
       const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/install', {
         method: 'POST',
-        body: JSON.stringify({ slug, version }),
+        body: JSON.stringify({ slug, version, registry: registry || undefined }),
       });
       if (!result.success) {
         const appError = normalizeAppError(new Error(result.error || 'Install failed'), {
@@ -254,9 +271,10 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   updateSkillFromApi: async (slug: string, version?: string) => {
     set((state) => ({ installing: { ...state.installing, [slug]: true } }));
     try {
+      const registry = get().registry;
       const result = await hostApiFetch<{ success: boolean; previousVersion?: string; newVersion?: string; error?: string }>('/api/clawhub/update', {
         method: 'POST',
-        body: JSON.stringify({ slug, version }),
+        body: JSON.stringify({ slug, version, registry: registry || undefined }),
       });
       // Refresh skills after update
       await get().fetchSkills();

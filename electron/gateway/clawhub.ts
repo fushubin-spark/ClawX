@@ -11,12 +11,14 @@ import { getOpenClawConfigDir, ensureDir, getClawHubCliBinPath, getClawHubCliEnt
 export interface ClawHubSearchParams {
     query: string;
     limit?: number;
+    registry?: string;
 }
 
 export interface ClawHubInstallParams {
     slug: string;
     version?: string;
     force?: boolean;
+    registry?: string;
 }
 
 export interface ClawHubUninstallParams {
@@ -27,6 +29,16 @@ export interface ClawHubUpdateParams {
     slug: string;
     version?: string;
     force?: boolean;
+    registry?: string;
+}
+
+export interface ClawHubExploreParams {
+    limit?: number;
+    registry?: string;
+}
+
+export interface ClawHubListParams {
+    registry?: string;
 }
 
 export interface ClawHubSkillResult {
@@ -52,6 +64,21 @@ export class ClawHubService {
     private cliEntryPath: string;
     private useNodeRunner: boolean;
     private ansiRegex: RegExp;
+    private _registry: string | undefined;
+
+    /**
+     * Get the current registry URL
+     */
+    public get registry(): string | undefined {
+        return this._registry;
+    }
+
+    /**
+     * Set the registry URL for all subsequent commands
+     */
+    public setRegistry(registry: string | undefined): void {
+        this._registry = registry;
+    }
 
     constructor() {
         // Use the user's OpenClaw config directory (~/.openclaw) for skill management
@@ -144,8 +171,22 @@ export class ClawHubService {
                 return;
             }
 
-            const commandArgs = this.useNodeRunner ? [this.cliEntryPath, ...args] : args;
-            const displayCommand = [this.cliPath, ...commandArgs].join(' ');
+            // Build command arguments: [node, entry, --registry, url, ...args] or [clawhub, --registry, url, ...args]
+            let commandArgs: string[];
+            if (this.useNodeRunner) {
+                commandArgs = [this.cliEntryPath];
+            } else {
+                commandArgs = [];
+            }
+
+            // Add registry flag if set (global option, applies to all commands)
+            if (this._registry) {
+                commandArgs.push('--registry', this._registry);
+            }
+
+            commandArgs.push(...args);
+
+            const displayCommand = [this.useNodeRunner ? process.execPath : this.cliPath, ...commandArgs].join(' ');
             console.log(`Running ClawHub command: ${displayCommand}`);
 
             const isWin = process.platform === 'win32';
@@ -203,10 +244,15 @@ export class ClawHubService {
      * Search for skills
      */
     async search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
+        // Set registry for this command
+        if (params.registry !== undefined) {
+            this._registry = params.registry;
+        }
+
         try {
             // If query is empty, use 'explore' to show trending skills
             if (!params.query || params.query.trim() === '') {
-                return this.explore({ limit: params.limit });
+                return this.explore({ limit: params.limit, registry: params.registry });
             }
 
             const args = ['search', params.query];
@@ -270,7 +316,12 @@ export class ClawHubService {
     /**
      * Explore trending skills
      */
-    async explore(params: { limit?: number } = {}): Promise<ClawHubSkillResult[]> {
+    async explore(params: ClawHubExploreParams = {}): Promise<ClawHubSkillResult[]> {
+        // Set registry for this command
+        if (params.registry !== undefined) {
+            this._registry = params.registry;
+        }
+
         try {
             const args = ['explore'];
             if (params.limit) {
@@ -307,6 +358,11 @@ export class ClawHubService {
      * Install a skill
      */
     async install(params: ClawHubInstallParams): Promise<void> {
+        // Set registry for this command
+        if (params.registry !== undefined) {
+            this._registry = params.registry;
+        }
+
         const args = ['install', params.slug];
 
         if (params.version) {
@@ -353,6 +409,11 @@ export class ClawHubService {
      * Update a skill to the latest version
      */
     async update(params: ClawHubUpdateParams): Promise<{ success: boolean; previousVersion?: string; newVersion?: string; error?: string }> {
+        // Set registry for this command
+        if (params.registry !== undefined) {
+            this._registry = params.registry;
+        }
+
         try {
             const args = ['update', params.slug];
 

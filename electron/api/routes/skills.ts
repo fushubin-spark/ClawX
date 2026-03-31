@@ -33,7 +33,7 @@ export async function handleSkillRoutes(
 
   if (url.pathname === '/api/clawhub/search' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<Record<string, unknown>>(req);
+      const body = await parseJsonBody<{ query?: string; limit?: number; registry?: string }>(req);
       sendJson(res, 200, {
         success: true,
         results: await ctx.clawHubService.search(body),
@@ -46,7 +46,7 @@ export async function handleSkillRoutes(
 
   if (url.pathname === '/api/clawhub/install' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<Record<string, unknown>>(req);
+      const body = await parseJsonBody<{ slug: string; version?: string; force?: boolean; registry?: string }>(req);
       await ctx.clawHubService.install(body);
       sendJson(res, 200, { success: true });
     } catch (error) {
@@ -68,7 +68,7 @@ export async function handleSkillRoutes(
 
   if (url.pathname === '/api/clawhub/update' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<Record<string, unknown>>(req);
+      const body = await parseJsonBody<{ slug: string; version?: string; force?: boolean; registry?: string }>(req);
       const result = await ctx.clawHubService.update(body);
       sendJson(res, 200, result);
     } catch (error) {
@@ -90,6 +90,17 @@ export async function handleSkillRoutes(
     try {
       const body = await parseJsonBody<{ slug?: string; skillKey?: string; baseDir?: string }>(req);
       await ctx.clawHubService.openSkillReadme(body.skillKey || body.slug || '', body.slug, body.baseDir);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/clawhub/set-registry' && req.method === 'PUT') {
+    try {
+      const body = await parseJsonBody<{ registry?: string }>(req);
+      ctx.clawHubService.setRegistry(body.registry);
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

@@ -406,7 +406,9 @@ export function Skills() {
     updateSkillFromApi,
     searching,
     searchError,
-    installing
+    installing,
+    registry,
+    setRegistry
   } = useSkillsStore();
   const { t } = useTranslation('skills');
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -415,9 +417,17 @@ export function Skills() {
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
+  const [selectedRegistry, setSelectedRegistry] = useState(registry);
 
   const isGatewayRunning = gatewayStatus.state === 'running';
   const [showGatewayWarning, setShowGatewayWarning] = useState(false);
+
+  // Sync local registry state with store when install sheet opens
+  useEffect(() => {
+    if (installSheetOpen) {
+      setSelectedRegistry(registry);
+    }
+  }, [installSheetOpen, registry]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -619,6 +629,17 @@ export function Skills() {
       toast.error(t('toast.failedUpdate') + ': ' + String(err));
     }
   }, [updateSkillFromApi, t]);
+
+  const handleRegistryChange = useCallback(async (newRegistry: string) => {
+    setSelectedRegistry(newRegistry);
+    await setRegistry(newRegistry);
+    // Re-search with new registry if there's a query
+    if (installQuery.trim()) {
+      searchSkills(installQuery.trim());
+    } else {
+      searchSkills('');
+    }
+  }, [setRegistry, installQuery, searchSkills]);
 
   if (loading) {
     return (
@@ -867,13 +888,17 @@ export function Skills() {
                   </button>
                 )}
               </div>
-              <Button
-                variant="outline"
-                disabled
-                className="h-10 rounded-xl border-black/10 dark:border-white/10 bg-transparent text-muted-foreground"
-              >
-                {t('marketplace.sourceLabel')}: {t('marketplace.sourceClawHub')}
-              </Button>
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] text-foreground/70 font-medium whitespace-nowrap">{t('marketplace.sourceLabel')}:</span>
+                <select
+                  value={selectedRegistry}
+                  onChange={(e) => void handleRegistryChange(e.target.value)}
+                  className="h-10 px-3 rounded-xl border border-black/10 dark:border-white/10 bg-[#eeece3] dark:bg-muted text-[13px] font-medium text-foreground/80 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                >
+                  <option value="">clawhub.com</option>
+                  <option value="https://wskillhub.tencent.com">wskillhub.tencent.com</option>
+                </select>
+              </div>
             </div>
           </div>
 
