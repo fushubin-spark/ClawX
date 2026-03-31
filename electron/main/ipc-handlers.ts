@@ -9,6 +9,7 @@ import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
+import { SkillhubService } from '../gateway/skillhub';
 import {
   type ProviderConfig,
 } from '../utils/secure-storage';
@@ -76,6 +77,7 @@ import {
 export function registerIpcHandlers(
   gatewayManager: GatewayManager,
   clawHubService: ClawHubService,
+  skillhubService: SkillhubService,
   mainWindow: BrowserWindow
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
@@ -89,6 +91,9 @@ export function registerIpcHandlers(
 
   // ClawHub handlers
   registerClawHubHandlers(clawHubService);
+
+  // Skillhub handlers
+  registerSkillhubHandlers(skillhubService);
 
   // OpenClaw handlers
   registerOpenClawHandlers(gatewayManager);
@@ -2077,6 +2082,61 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
     try {
       await clawHubService.openSkillReadme(slug);
       return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+}
+
+/**
+ * Skillhub-related IPC handlers
+ */
+function registerSkillhubHandlers(skillhubService: SkillhubService): void {
+  // Search skills
+  ipcMain.handle('skillhub:search', async (_, query: string) => {
+    try {
+      const results = await skillhubService.search(query);
+      return { success: true, results };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Explore skills
+  ipcMain.handle('skillhub:explore', async (_, limit?: number) => {
+    try {
+      const results = await skillhubService.explore(limit);
+      return { success: true, results };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Install skill
+  ipcMain.handle('skillhub:install', async (_, params: { slug: string; version?: string; force?: boolean }) => {
+    try {
+      await skillhubService.install(params);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Update skill
+  ipcMain.handle('skillhub:update', async (_, params: { slug: string; version?: string }) => {
+    try {
+      const result = await skillhubService.update(params);
+      return result;
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // List installed skills
+  ipcMain.handle('skillhub:list', async () => {
+    try {
+      const results = await skillhubService.listInstalled();
+      return { success: true, results };
     } catch (error) {
       return { success: false, error: String(error) };
     }
