@@ -113,12 +113,17 @@ function App() {
 
   // Initialize Gateway connection on mount
   useEffect(() => {
-    initGateway();
+    // Don't crash the whole app if gateway fails
+    initGateway().catch((err) => {
+      console.warn('[App] Gateway init failed (non-fatal):', err);
+    });
   }, [initGateway]);
 
   // Initialize provider snapshot on mount
   useEffect(() => {
-    initProviders();
+    initProviders().catch((err) => {
+      console.warn('[App] Provider init failed (non-fatal):', err);
+    });
   }, [initProviders]);
 
   // Redirect to setup wizard if not complete
@@ -130,15 +135,14 @@ function App() {
 
   // Listen for navigation events from main process
   useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).electron?.ipcRenderer) return;
     const handleNavigate = (...args: unknown[]) => {
       const path = args[0];
       if (typeof path === 'string') {
         navigate(path);
       }
     };
-
-    const unsubscribe = window.electron.ipcRenderer.on('navigate', handleNavigate);
-
+    const unsubscribe = (window as any).electron.ipcRenderer.on('navigate', handleNavigate);
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
