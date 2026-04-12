@@ -10,7 +10,7 @@ import i18n from './i18n';
 import { MainLayout } from './components/layout/MainLayout';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Models } from './pages/Models';
-import { Chat } from './pages/Chat';
+import { HermesHub } from './pages/Hermes/HermesHub';
 import { Agents } from './pages/Agents';
 import { Channels } from './pages/Channels';
 import { Skills } from './pages/Skills';
@@ -180,6 +180,7 @@ function App() {
             <Route path="/skills" element={<Skills />} />
             <Route path="/cron" element={<Cron />} />
             <Route path="/settings/*" element={<Settings />} />
+            <Route path="/hermes" element={<HermesHub />} />
           </Route>
         </Routes>
 
