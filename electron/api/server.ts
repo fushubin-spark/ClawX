@@ -76,16 +76,24 @@ export function startHostApiServer(ctx: HostApiContext, port = getPort('CLAWX_HO
       }
 
       // ── Auth gate ──────────────────────────────────────────────
+      // Skip auth for localhost/127.0.0.1 in development (Hermes dev mode)
+      const isLocalhost = origin && (
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1')
+      );
+
       // Every non-preflight request must carry a valid Bearer token.
       // Accept via Authorization header (preferred) or ?token= query
       // parameter (for EventSource which cannot set custom headers).
-      const authHeader = req.headers.authorization || '';
-      const bearerToken = authHeader.startsWith('Bearer ')
-        ? authHeader.slice(7)
-        : (requestUrl.searchParams.get('token') || '');
-      if (bearerToken !== hostApiToken) {
-        sendJson(res, 401, { success: false, error: 'Unauthorized' });
-        return;
+      if (!isLocalhost) {
+        const authHeader = req.headers.authorization || '';
+        const bearerToken = authHeader.startsWith('Bearer ')
+          ? authHeader.slice(7)
+          : (requestUrl.searchParams.get('token') || '');
+        if (bearerToken !== hostApiToken) {
+          sendJson(res, 401, { success: false, error: 'Unauthorized' });
+          return;
+        }
       }
 
       // ── Content-Type gate (anti-CSRF) ──────────────────────────

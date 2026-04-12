@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hermes Hub — 多实例管理</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      background: #0a0a0a;
+      color: #e4e4e7;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    h1 { color: #fff; margin-bottom: 8px; font-size: 24px; }
+    .subtitle { color: #71717a; font-size: 14px; margin-bottom: 24px; }
+    .layout { display: flex; gap: 24px; min-height: 80vh; }
+    .sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
+    .main { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 16px; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .card-title { font-size: 14px; font-weight: 600; color: #fff; }
+    .instance-card {
+      border-left: 4px solid #3b82f6;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      background: #1c1c1e;
+    }
+    .instance-card:hover { border-color: #60a5fa; background: #252528; }
+    .instance-card.selected { border-color: #3b82f6; background: #1e1e2e; }
+    .instance-meta { font-size: 12px; color: #71717a; margin: 6px 0; line-height: 1.6; }
+    .instance-meta > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn { padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 500; border: none; cursor: pointer; transition: opacity 0.2s; display: inline-flex; align-items: center; gap: 4px; }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-secondary { background: #27272a; color: #a1a1aa; }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; }
+    .btn-success { background: #166534; color: #86efac; }
+    .btn-group { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .dot-running { background: #22c55e; }
+    .dot-stopped { background: #71717a; }
+    .dot-starting { background: #f59e0b; }
+    .dot-error { background: #ef4444; }
+    .console-output {
+      background: #09090b;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+      font-size: 12px;
+      color: #a1a1aa;
+      overflow-y: auto;
+      max-height: 350px;
+      line-height: 1.6;
+      min-height: 160px;
+    }
+    .console-line { white-space: pre-wrap; word-break: break-all; }
+    .console-line.stderr { color: #f87171; }
+    .console-line.info { color: #60a5fa; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 13px; color: #a1a1aa; margin-bottom: 6px; font-weight: 500; }
+    .form-group input[type="text"] {
+      width: 100%;
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+    .form-group input[type="text"]:focus { border-color: #3b82f6; }
+    .path-picker { display: flex; gap: 8px; align-items: center; }
+    .path-picker input { flex: 1; }
+    .tip { font-size: 11px; color: #52525b; margin-top: 5px; line-height: 1.5; }
+    .empty { text-align: center; padding: 48px 20px; color: #52525b; }
+    .empty-icon { font-size: 48px; margin-bottom: 16px; }
+    .empty-text { font-size: 14px; margin-bottom: 6px; }
+    .header-bar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
+      margin-bottom: 16px;
+      border-radius: 12px 12px 0 0;
+    }
+    .instance-detail {
+      border-left: 4px solid #3b82f6;
+      padding: 16px;
+      background: #18181b;
+      border-radius: 12px;
+    }
+    .instance-detail-name { font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .instance-detail-path { font-size: 12px; color: #71717a; margin-bottom: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    .modal { background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 24px; width: 500px; max-width: 90vw; }
+    .modal-title { font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 12px; margin-top: 20px; }
+    .modal-actions .btn { flex: 1; padding: 10px; justify-content: center; }
+    .action-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<div style="margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between;">
+  <div>
+    <h1>🤖 Hermes Hub</h1>
+    <p class="subtitle">多 Hermes 实例管理 · 独立测试页面</p>
+  </div>
+  <div style="display: flex; gap: 8px; align-items: center;">
+    <span id="api-status" style="font-size: 12px; color: #71717a;">检查中...</span>
+    <button class="btn btn-primary" onclick="showAddModal()">+ 添加实例</button>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="card" style="flex:1; display:flex; flex-direction:column;">
+      <div class="card-header">
+        <span class="card-title">实例列表</span>
+        <span id="instance-count" style="font-size: 12px; color: #71717a;">0 个实例</span>
+      </div>
+      <div id="instance-list" style="flex:1; overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <div class="main" id="detail-panel">
+    <div class="empty">
+      <div class="empty-icon">👈</div>
+      <div class="empty-text">选择一个实例查看详情和终端输出</div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Modal -->
+<div id="add-modal" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-title">添加 Hermes 实例</div>
+
+    <div class="form-group">
+      <label>实例名称</label>
+      <input type="text" id="form-name" placeholder="例如：工作 Bot" autocomplete="off" />
+    </div>
+
+    <div class="form-group">
+      <label>Hermes Home 目录</label>
+      <div class="path-picker">
+        <input type="text" id="form-home" placeholder="例如：/Users/sparkfu/.hermes" autocomplete="off" />
+        <button class="btn btn-secondary" id="pick-btn" type="button">📁 选择</button>
+      </div>
+      <div class="tip">
+        💡 默认目录：~/.hermes<br>
+        也可直接粘贴完整路径到输入框
+      </div>
+    </div>
+
+    <div id="form-error" style="color: #f87171; font-size: 13px; margin-bottom: 12px; display: none;"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="hideAddModal()">取消</button>
+      <button class="btn btn-primary" onclick="submitAdd()">确认添加</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var API_BASE = 'http://127.0.0.1:13210';
+var instances = [];
+var selectedId = null;
+var _hiddenDirInput = null;
+
+// ── API ──────────────────────────────────────────────────────────────────
+async function api(path, options) {
+  options = options || {};
+  var res = await fetch(API_BASE + path, {
+    method: options.method || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body: options.body
+  });
+  if (!res.ok) {
+    var errData = {};
+    try { errData = await res.json(); } catch(e) {}
+    throw new Error(errData.error || 'HTTP ' + res.status);
+  }
+  return res.json();
+}
+
+async function loadInstances() {
+  try {
+    var data = await api('/api/hermes/instances');
+    instances = Array.isArray(data) ? data : [];
+    updateApiStatus('ok', 'API 正常');
+  } catch(e) {
+    updateApiStatus('error', e.message);
+    instances = [];
+  }
+  render();
+}
+
+async function addInstance(name, hermesHome) {
+  var data = await api('/api/hermes/instances', {
+    method: 'POST',
+    body: JSON.stringify({ name: name, hermesHome: hermesHome })
+  });
+  if (!data.success) throw new Error(data.error || '添加失败');
+}
+
+async function removeInstance(id) {
+  await api('/api/hermes/instances/' + id, { method: 'DELETE' });
+  if (selectedId === id) selectedId = null;
+}
+
+async function startInstance(id) { await api('/api/hermes/instances/' + id + '/start', { method: 'POST' }); await loadInstances(); }
+async function stopInstance(id) { await api('/api/hermes/instances/' + id + '/stop', { method: 'POST' }); await loadInstances(); }
+async function restartInstance(id) { await api('/api/hermes/instances/' + id + '/restart', { method: 'POST' }); await loadInstances(); }
+
+async function getOutput(id) {
+  try { var d = await api('/api/hermes/instances/' + id + '/output?lines=500'); return d.output || []; }
+  catch(e) { return []; }
+}
+
+// ── Directory Picker ─────────────────────────────────────────────────────
+function initDirectoryPicker() {
+  var btn = document.getElementById('pick-btn');
+  if (!btn) return;
+
+  // Create hidden file input for webkitdirectory fallback
+  _hiddenDirInput = document.createElement('input');
+  _hiddenDirInput.type = 'file';
+  _hiddenDirInput.webkitdirectory = 'true';
+  _hiddenDirInput.style.display = 'none';
+  document.body.appendChild(_hiddenDirInput);
+
+  _hiddenDirInput.addEventListener('change', function(e) {
+    var files = e.target.files;
+    if (!files || files.length === 0) return;
+    var first = files[0];
+    var dirPath = '';
+    if (first.webkitRelativePath) {
+      var parts = first.webkitRelativePath.split('/');
+      parts.pop();
+      dirPath = parts.join('/');
+    }
+    if (first.path) {
+      dirPath = first.path.replace(/\/[^\/]+$/, '');
+    }
+    document.getElementById('form-home').value = dirPath || '/';
+    _hiddenDirInput.value = '';
+  });
+
+  btn.addEventListener('click', function() {
+    // Try File System Access API first (works in Chrome when served from http)
+    if (window.showDirectoryPicker) {
+      try {
+        var handle = window.showDirectoryPicker();
+        if (handle && handle.then) {
+          // It's a Promise
+          handle.then(function(dirHandle) {
+            document.getElementById('form-home').value = dirHandle.name || '/';
+          }).catch(function() {
+            _hiddenDirInput.click();
+          });
+          return;
+        }
+      } catch(e) {
+        // Not available or threw, fall through to file picker
+      }
+    }
+    // Fallback: open the hidden file picker
+    _hiddenDirInput.click();
+  });
+}
+
+// ── UI ──────────────────────────────────────────────────────────────────
+function updateApiStatus(status, msg) {
+  var el = document.getElementById('api-status');
+  el.textContent = 'API: ' + msg;
+  el.style.color = status === 'ok' ? '#22c55e' : '#f87171';
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function render() {
+  document.getElementById('instance-count').textContent = instances.length + ' 个实例';
+  var list = document.getElementById('instance-list');
+  if (!list) return;
+
+  if (instances.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">暂无实例</div><button class="btn btn-primary" onclick="showAddModal()" style="margin-top:8px;">+ 添加第一个</button></div>';
+    return;
+  }
+
+  var labels = { running:'运行中', stopped:'已停止', starting:'启动中', error:'错误' };
+  list.innerHTML = instances.map(function(inst) {
+    return '<div class="instance-card ' + (inst.id === selectedId ? 'selected' : '') + '" ' +
+           'style="border-left-color:' + (inst.color || '#3b82f6') + '" ' +
+           'onclick="selectInstance(\'' + inst.id + '\')">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+        '<span style="font-weight:500;color:#fff;font-size:14px;">' + escapeHtml(inst.name) + '</span>' +
+        '<span class="dot dot-' + inst.state + '"></span></div>' +
+      '<div class="instance-meta">' +
+        '<div title="' + escapeHtml(inst.hermesHome) + '">📁 ' + escapeHtml(inst.hermesHome) + '</div>' +
+        '<div>状态：' + (labels[inst.state] || inst.state) + '</div>' +
+        (inst.pid ? '<div>PID：' + inst.pid + '</div>' : '') +
+        (inst.error ? '<div style="color:#f87171">⚠ ' + escapeHtml(inst.error) + '</div>' : '') +
+      '</div>' +
+      '<div class="btn-group">' +
+        (inst.state === 'running'
+          ? '<button class="btn btn-secondary" style="flex:1" onclick="event.stopPropagation();stopInst(\'' + inst.id + '\')">⏹ 停止</button>'
+          : '<button class="btn btn-success" style="flex:1" onclick="event.stopPropagation();startInst(\'' + inst.id + '\')">▶ 启动</button>'
+        ) +
+        '<button class="btn btn-secondary" style="flex:1" onclick="event.stopPropagation();selectInstance(\'' + inst.id + '\')">📋</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function selectInstance(id) {
+  selectedId = id;
+  render();
+  var output = await getOutput(id);
+  var inst = instances.find(function(i){ return i.id === id; });
+  var panel = document.getElementById('detail-panel');
+  if (!inst || !panel) return;
+  panel.innerHTML =
+    '<div class="instance-detail" style="border-left-color:' + (inst.color || '#3b82f6') + '">' +
+      '<div class="instance-detail-name">' +
+        '<span class="dot dot-' + inst.state + '"></span>' + escapeHtml(inst.name) +
+      '</div>' +
+      '<div class="instance-detail-path">' + escapeHtml(inst.hermesHome) + '</div>' +
+      (inst.error ? '<div style="color:#f87171;font-size:12px;margin-bottom:8px;">⚠ ' + escapeHtml(inst.error) + '</div>' : '') +
+      '<div class="action-row">' +
+        (inst.state === 'running'
+          ? '<button class="btn btn-secondary" onclick="stopInst(\'' + inst.id + '\')">⏹ 停止</button>' +
+            '<button class="btn btn-success" onclick="restartInst(\'' + inst.id + '\')">🔄 重启</button>'
+          : '<button class="btn btn-primary" onclick="startInst(\'' + inst.id + '\')">▶ 启动</button>'
+        ) +
+        '<button class="btn btn-danger" onclick="removeInst(\'' + inst.id + '\')">🗑 删除</button>' +
+      '</div>' +
+      '<div style="font-size:12px;color:#52525b;">' +
+        '状态：' + (labels[inst.state] || inst.state) +
+        (inst.pid ? ' &nbsp;|&nbsp; PID：' + inst.pid : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="card" style="margin-top:16px;">' +
+      '<div class="header-bar">' +
+        '<span class="card-title">终端输出</span>' +
+        '<span style="margin-left:auto;font-size:12px;color:#52525b;">' + output.length + ' 行</span>' +
+      '</div>' +
+      '<div class="console-output" id="console-output">' +
+        (output.length === 0 ? '<span style="color:#52525b">暂无输出。启动实例后可在此查看日志。</span>' :
+         output.map(function(line) {
+           var cls = line.startsWith('[ERR]') || line.startsWith('Error') ? 'stderr' :
+                     line.startsWith('[INFO]') ? 'info' : '';
+           return '<div class="console-line ' + cls + '">' + escapeHtml(line) + '</div>';
+         }).join('')) +
+      '</div>' +
+    '</div>';
+  var co = document.getElementById('console-output');
+  if (co) co.scrollTop = co.scrollHeight;
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────
+var startInst = function(id) { startInstance(id); };
+var stopInst = function(id) { stopInstance(id); };
+var restartInst = function(id) { restartInstance(id); setTimeout(function() { if (selectedId === id) selectInstance(id); }, 800); };
+var removeInst = function(id) { if (confirm('确定删除此实例？')) { removeInstance(id).then(loadInstances); } };
+
+function showAddModal() {
+  document.getElementById('add-modal').style.display = 'flex';
+  document.getElementById('form-name').value = '';
+  document.getElementById('form-home').value = '';
+  document.getElementById('form-error').style.display = 'none';
+  document.getElementById('form-name').focus();
+}
+function hideAddModal() { document.getElementById('add-modal').style.display = 'none'; }
+
+async function submitAdd() {
+  var name = document.getElementById('form-name').value.trim();
+  var home = document.getElementById('form-home').value.trim();
+  var errEl = document.getElementById('form-error');
+  if (!name) { errEl.textContent = '请填写实例名称'; errEl.style.display = 'block'; return; }
+  if (!home) { errEl.textContent = '请填写 Hermes Home 目录路径'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  try {
+    await addInstance(name, home);
+    await loadInstances();
+    hideAddModal();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideAddModal(); });
+
+// ── Init ────────────────────────────────────────────────────────────────
+initDirectoryPicker();
+loadInstances();
+setInterval(loadInstances, 5000);
+setInterval(function() {
+  if (selectedId) {
+    var inst = instances.find(function(i){ return i.id === selectedId; });
+    if (inst && inst.state === 'running') selectInstance(selectedId);
+  }
+}, 3000);
+</script>
+</body>
+</html>
