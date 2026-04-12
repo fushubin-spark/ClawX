@@ -2,13 +2,59 @@
  * Hermes Hub Page
  * Main dashboard for managing multiple Hermes instances
  */
+import { Component, type ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useHermesStore } from '@/stores/hermes';
 import { InstanceCard } from '@/components/hermes/InstanceCard';
 import { InstanceConsole } from '@/components/hermes/InstanceConsole';
 import { AddInstanceForm } from '@/components/hermes/AddInstanceForm';
 
-export function HermesHub() {
+interface Props {}
+
+interface State {
+  hasError: boolean;
+  error?: Error;
+}
+
+/**
+ * Error boundary to prevent white screens on component errors
+ */
+class HermesHubErrorBoundary extends Component<{ children: ReactNode }, State> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: unknown) {
+    console.error('[HermesHub] Render error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center p-6">
+            <div className="text-red-400 text-lg mb-2">Hermes Hub failed to load</div>
+            <div className="text-zinc-500 text-sm mb-4">{this.state.error?.message}</div>
+            <button
+              onClick={() => this.setState({ hasError: false, error: undefined })}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function HermesHubContent() {
   const {
     instances,
     selectedInstanceId,
@@ -21,9 +67,18 @@ export function HermesHub() {
   const [showAddForm, setShowAddForm] = useState(false);
 
   useEffect(() => {
-    fetchInstances();
-    // Refresh instances every 5 seconds
-    const interval = setInterval(fetchInstances, 5000);
+    try {
+      fetchInstances();
+    } catch (e) {
+      console.warn('[HermesHub] fetchInstances threw:', e);
+    }
+    const interval = setInterval(() => {
+      try {
+        fetchInstances();
+      } catch (e) {
+        console.warn('[HermesHub] fetchInstances threw:', e);
+      }
+    }, 5000);
     return () => clearInterval(interval);
   }, [fetchInstances]);
 
@@ -130,5 +185,13 @@ export function HermesHub() {
       {/* Add Instance Modal */}
       {showAddForm && <AddInstanceForm onClose={() => setShowAddForm(false)} />}
     </div>
+  );
+}
+
+export function HermesHub() {
+  return (
+    <HermesHubErrorBoundary>
+      <HermesHubContent />
+    </HermesHubErrorBoundary>
   );
 }
